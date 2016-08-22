@@ -1,0 +1,38 @@
+{
+    "author": "Erik Brinkman",
+    "dependencies": {
+        "pebble-clay": "^1.0.2"
+    },
+    "keywords": [],
+    "name": "modernesque",
+    "pebble": {
+        "capabilities": [
+            "configurable"
+        ],
+        "displayName": "Modernesque",
+        "enableMultiJS": true,
+        "messageKeys": [
+            "BACKGROUND_COLOR",
+            "MINUTE_COLOR",
+            "MINUTE_BACKGROUND_COLOR",
+            "HOUR_COLOR",
+            "DATE_COLOR",
+            "SHOW_DATE"
+        ],
+        "projectType": "native",
+        "resources": {
+            "media": []
+        },
+        "sdkVersion": "3",
+        "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "chalk"
+        ],
+        "uuid": "1519bb46-23a4-4c06-ac5b-dcd8758a6e02",
+        "watchapp": {
+            "watchface": true
+        }
+    },
+    "version": "1.0.0"
+}
