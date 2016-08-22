@@ -1,9 +1,6 @@
 #include <pebble.h>
 
-// FIXME Add square / black and white version
-// Make tail background a little smaller so that you don't see edging?
-// Change dots to use arc fill insead of circle fill
-// Make things not visible...
+// TODO Cleanup naming conventions
 
 // Storage Keys
 enum storage {
@@ -18,9 +15,9 @@ enum storage {
 
 // Defined at init
 static Window* window;
-static TextLayer* date_layer;
 static Layer* minute_tail_background_layer;
 static Layer* minute_tail_layer;
+static TextLayer* date_layer;
 static Layer* hour_layer;
 static Layer* hour_dot_layer;
 static Layer* minute_layer;
@@ -38,6 +35,10 @@ static uint32_t minute_tail_thickness;
 static uint16_t hour_gap;
 static uint16_t minute_tail_radius;
 static uint16_t hour_radius;
+#ifdef PBL_RECT
+static Layer* tail_mask_layer;
+static GRect tail_fill_bounds;
+#endif
 
 // Set by config
 static GColor8 minute_color;
@@ -72,13 +73,28 @@ static void tick_update(struct tm* tick_time, TimeUnits units_changed) {
 
 static void minute_tail_background_layer_update(Layer* layer, GContext* ctx) {
   graphics_context_set_fill_color(ctx, tail_background_color);
+  #ifdef PBL_RECT
+  graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
+  #else
   graphics_fill_radial(ctx, layer_get_bounds(layer), GOvalScaleModeFillCircle, minute_tail_thickness, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360));
+  #endif
 }
 
 static void minute_tail_layer_update(Layer* layer, GContext* ctx) {
   graphics_context_set_fill_color(ctx, minute_color);
+  #ifdef PBL_RECT
+  graphics_fill_radial(ctx, tail_fill_bounds, GOvalScaleModeFillCircle, tail_fill_bounds.size.h / 2, DEG_TO_TRIGANGLE(0), min_angle);
+  #else
   graphics_fill_radial(ctx, layer_get_bounds(layer), GOvalScaleModeFillCircle, minute_tail_thickness, DEG_TO_TRIGANGLE(0), min_angle);
+  #endif
 }
+
+#ifdef PBL_RECT
+static void minute_tail_mask_layer_update(Layer* layer, GContext* ctx) {
+  graphics_context_set_fill_color(ctx, background_color);
+  graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
+}
+#endif
 
 static void hour_layer_update(Layer* layer, GContext* ctx) {
   graphics_context_set_stroke_color(ctx, hour_color);
@@ -92,7 +108,7 @@ static void hour_layer_update(Layer* layer, GContext* ctx) {
 
 static void hour_dot_layer_update(Layer* layer, GContext* ctx) {
   graphics_context_set_fill_color(ctx, hour_color);
-  graphics_fill_circle(ctx, (GPoint){hour_dot_radius, hour_dot_radius}, hour_dot_radius);
+  graphics_fill_radial(ctx, layer_get_bounds(layer), GOvalScaleModeFillCircle, hour_dot_radius, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360));
 }
 
 static void minute_layer_update(Layer* layer, GContext* ctx) {
@@ -108,7 +124,7 @@ static void minute_layer_update(Layer* layer, GContext* ctx) {
 
 static void minute_dot_layer_update(Layer* layer, GContext* ctx) {
   graphics_context_set_fill_color(ctx, minute_color);
-  graphics_fill_circle(ctx, (GPoint){minute_dot_radius, minute_dot_radius}, minute_dot_radius);
+  graphics_fill_radial(ctx, layer_get_bounds(layer), GOvalScaleModeFillCircle, minute_dot_radius, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360));
 }
 
 void repaint(void) {
@@ -181,8 +197,13 @@ void init(void) {
   hour_dot_radius = minute_dot_radius + 1;
   minute_tail_radius = bounds.size.w / 2 - minute_tail_gap;
   hour_radius = minute_tail_radius - minute_tail_thickness - hour_gap;
-  GRect tail_bounds = center_square(minute_tail_radius);
-  GRect date_bounds = {{center.x - 15, center.y + (minute_tail_radius - minute_tail_thickness) / 2 - 10}, {30, 20}};
+  GRect tail_bounds = {{minute_tail_gap, minute_tail_gap}, {bounds.size.w - 2 * minute_tail_gap, bounds.size.h - 2 * minute_tail_gap}};
+  GRect date_bounds = {{center.x - 15, center.y + (bounds.size.h / 2 - minute_tail_gap - minute_tail_thickness) / 2 - 10}, {30, 20}};
+  #ifdef PBL_RECT
+  int16_t fill_size = tail_bounds.size.w + tail_bounds.size.h;
+  tail_fill_bounds = (GRect){{(tail_bounds.size.w - fill_size) / 2, (tail_bounds.size.h - fill_size) / 2},
+                             {fill_size, fill_size}};
+  #endif
   
   // Set default storage values
   if (!persist_exists(S_BACKGROUND_COLOR)) {
@@ -206,15 +227,10 @@ void init(void) {
   
   // Listen for config changes
   app_message_register_inbox_received(config_received);
-  app_message_open(128, 128);  // FIXME Measure actual size
+  uint32_t dict_size = dict_calc_buffer_size(6, 4, 4, 4, 4, 4, 1);
+  app_message_open(dict_size, dict_size);
   
   // Define all layers
-  date_layer = text_layer_create(date_bounds);
-  text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS));
-  text_layer_set_text_alignment(date_layer, GTextAlignmentCenter);
-  text_layer_set_background_color(date_layer, GColorClear);
-  layer_add_child(window_layer, (Layer*) date_layer);
-  
   minute_tail_background_layer = layer_create(tail_bounds);
   layer_set_update_proc(minute_tail_background_layer, minute_tail_background_layer_update);
   layer_add_child(window_layer, minute_tail_background_layer);
@@ -223,6 +239,20 @@ void init(void) {
   minute_tail_layer = layer_create(tail_bounds);
   layer_set_update_proc(minute_tail_layer, minute_tail_layer_update);
   layer_add_child(window_layer, minute_tail_layer);
+  
+  #ifdef PBL_RECT
+  tail_mask_layer = layer_create((GRect){{tail_bounds.origin.x + minute_tail_thickness, tail_bounds.origin.y + minute_tail_thickness},
+                                                      {tail_bounds.size.w - 2 * minute_tail_thickness, tail_bounds.size.h - 2 * minute_tail_thickness}});
+  layer_set_update_proc(tail_mask_layer, minute_tail_mask_layer_update);
+  layer_add_child(window_layer, tail_mask_layer);
+  layer_mark_dirty(tail_mask_layer);
+  #endif
+  
+  date_layer = text_layer_create(date_bounds);
+  text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS));
+  text_layer_set_text_alignment(date_layer, GTextAlignmentCenter);
+  text_layer_set_background_color(date_layer, GColorClear);
+  layer_add_child(window_layer, (Layer*) date_layer);
   
   hour_layer = layer_create(center_square(hour_radius));
   layer_set_update_proc(hour_layer, hour_layer_update);
@@ -250,14 +280,16 @@ void init(void) {
 }
 
 void deinit(void) {
-  // FIXME Destroy everything
   layer_destroy(minute_dot_layer);
   layer_destroy(hour_dot_layer);
   layer_destroy(hour_layer);
   layer_destroy(minute_tail_layer);
+  text_layer_destroy(date_layer);
+  #ifdef PBL_RECT
+  layer_destroy(tail_mask_layer);
+  #endif
   layer_destroy(minute_tail_background_layer);
   layer_destroy(minute_layer);
-  text_layer_destroy(date_layer);
   window_destroy(window);
 }
 
